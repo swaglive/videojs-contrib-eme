@@ -1,4 +1,4 @@
-/*! @name videojs-contrib-eme @version 4.0.0 @license Apache-2.0 */
+/*! @name videojs-contrib-eme @version 4.0.1 @license Apache-2.0 */
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('global/document'), require('video.js'), require('global/window')) :
   typeof define === 'function' && define.amd ? define(['exports', 'global/document', 'video.js', 'global/window'], factory) :

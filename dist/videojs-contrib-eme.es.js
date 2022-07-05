@@ -1,4 +1,4 @@
-/*! @name videojs-contrib-eme @version 4.0.0 @license Apache-2.0 */
+/*! @name videojs-contrib-eme @version 4.0.1 @license Apache-2.0 */
 import document from 'global/document';
 import videojs from 'video.js';
 import window from 'global/window';
