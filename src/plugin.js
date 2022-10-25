@@ -1,3 +1,17 @@
+// Here is the reason why we fork videojs-contrib-eme to our workspace
+/* 1. videojs-contrib-eme is not fully support Edge (legacy) browser.
+    You can see the specific function parsePSSH in eme.js.
+    If we don't parse the initdata, Edge(legacy) will throw error when generateRequest. */
+
+/* 2. videojs-contrib-eme did not expose any function to close keySession.
+  Each device may have session limitations. If we don't do that, unexpected errors may occur. */
+
+/* 2.1 videojs-contrib-eme did not support keySession add/remove flow, we create addKeySession,
+  and closeKeySession to make sure we can close keySession whenever we need it. */
+
+/* 3. videojs-contrib-eme did not run MediaKeys encrypted event correctly on Fairplay,
+  cant't get correct contentId, we force safari to use WebKitMediaKeys in plugin.js */
+
 import videojs from 'video.js';
 import window from 'global/window';
 import { standard5July2016, getSupportedKeySystem } from './eme';
@@ -11,6 +25,24 @@ import {
 } from './ms-prefixed';
 import { arrayBuffersEqual, arrayBufferFrom, merge } from './utils';
 import {version as VERSION} from '../package.json';
+
+export const addKeySession = (sessions, initData, keySession) =>{
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].initData === initData) {
+      sessions[i].keySession = keySession;
+      return;
+    }
+  }
+};
+
+export const closeKeySession = (sessions = []) => {
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].keySession) {
+      sessions[i].keySession.close();
+    }
+  }
+
+};
 
 export const hasSession = (sessions, initData) => {
   for (let i = 0; i < sessions.length; i++) {
@@ -89,6 +121,7 @@ export const handleEncryptedEvent = (player, event, options, sessions, eventBus)
       keySystemAccess,
       options,
       removeSession: removeSession.bind(null, sessions),
+      addKeySession: addKeySession.bind(null, sessions),
       eventBus
     });
   });
@@ -227,7 +260,7 @@ const onPlayerReady = (player, emeError) => {
 
   setupSessions(player);
 
-  if (window.MediaKeys) {
+  if (window.MediaKeys && !window.WebKitMediaKeys) {
     // Support EME 05 July 2016
     // Chrome 42+, Firefox 47+, Edge, Safari 12.1+ on macOS 10.14+
     player.tech_.el_.addEventListener('encrypted', (event) => {

@@ -1,0 +1,40 @@
+name: Build for package
+
+on:
+  push:
+    branches:
+      - 'feat/swag-webapp'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          cache: 'npm'
+      - name: PreInstall
+        run: |
+          mkdir dist
+      - name: Install 
+        run: npm install
+      - name: Build
+        run: npm run build
+      - name: PostBuild
+        run: |
+          cp package.json dist
+          mkdir dist/dist
+          mv dist/videojs-contrib-eme.cjs.js  dist/dist/videojs-contrib-eme.cjs.js
+          mv dist/videojs-contrib-eme.es.js  dist/dist/videojs-contrib-eme.es.js
+          mv dist/videojs-contrib-eme.js  dist/dist/videojs-contrib-eme.js
+          mv dist/videojs-contrib-eme.min.js  dist/dist/videojs-contrib-eme.min.js
+      - name: Release
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: swag-webapp

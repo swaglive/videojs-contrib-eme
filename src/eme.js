@@ -9,6 +9,135 @@ import {
   defaultGetContentId as defaultFairplayGetContentId
 } from './fairplay';
 
+const getIsEdgeLegacy = () => {
+  return window.navigator && window.navigator.userAgent && window.navigator.userAgent.indexOf('Edge/') > -1;
+};
+
+// https://github.com/Dash-Industry-Forum/dash.js/blob/042e07df10175d2334db3158286768f34eb960c8/src/streaming/protection/controllers/ProtectionController.js#L166
+const parsePSSH = data => {
+  if (data === null || data === undefined) {
+    return [];
+  }
+
+  // data.buffer first for Uint8Array support
+  const dv = new DataView(data.buffer || data);
+  const done = false;
+  const pssh = {};
+
+  // TODO: Need to check every data read for end of buffer
+  let byteCursor = 0;
+  let systemID;
+
+  while (!done) {
+    // let psshDataSize;
+
+    const boxStart = byteCursor;
+
+    if (byteCursor >= dv.buffer.byteLength) {
+      break;
+    }
+
+    /* Box size */
+    const size = dv.getUint32(byteCursor);
+    const nextBox = byteCursor + size;
+
+    byteCursor += 4;
+
+    /* Verify PSSH */
+    if (dv.getUint32(byteCursor) !== 0x70737368) {
+      byteCursor = nextBox;
+      continue;
+    }
+    byteCursor += 4;
+
+    /* Version must be 0 or 1 */
+    const version = dv.getUint8(byteCursor);
+
+    if (version !== 0 && version !== 1) {
+      byteCursor = nextBox;
+      continue;
+    }
+    byteCursor++;
+
+    /* skip flags */
+    byteCursor += 3;
+
+    // 16-byte UUID/SystemID
+    systemID = '';
+    let i;
+    let val;
+
+    for (i = 0; i < 4; i++) {
+      val = dv.getUint8(byteCursor + i).toString(16);
+      systemID += val.length === 1 ? '0' + val : val;
+    }
+    byteCursor += 4;
+    systemID += '-';
+    for (i = 0; i < 2; i++) {
+      val = dv.getUint8(byteCursor + i).toString(16);
+      systemID += val.length === 1 ? '0' + val : val;
+    }
+    byteCursor += 2;
+    systemID += '-';
+    for (i = 0; i < 2; i++) {
+      val = dv.getUint8(byteCursor + i).toString(16);
+      systemID += val.length === 1 ? '0' + val : val;
+    }
+    byteCursor += 2;
+    systemID += '-';
+    for (i = 0; i < 2; i++) {
+      val = dv.getUint8(byteCursor + i).toString(16);
+      systemID += val.length === 1 ? '0' + val : val;
+    }
+    byteCursor += 2;
+    systemID += '-';
+    for (i = 0; i < 6; i++) {
+      val = dv.getUint8(byteCursor + i).toString(16);
+      systemID += val.length === 1 ? '0' + val : val;
+    }
+    byteCursor += 6;
+
+    systemID = systemID.toLowerCase();
+
+    /* PSSH Data Size */
+    // psshDataSize = dv.getUint32(byteCursor);
+    byteCursor += 4;
+
+    /* PSSH Data */
+    pssh[systemID] = dv.buffer.slice(boxStart, nextBox);
+    byteCursor = nextBox;
+  }
+
+  return pssh[systemID];
+};
+
+// TODO:
+// var arrayToString = buffer => {
+//   const uint8array = new Uint8Array(buffer);
+//   return String.fromCharCode.apply(null, uint8array);
+// };
+
+// var extractUuid = initData => {
+//   const string = arrayToString(initData);
+//   console.log('extractUuid() string:', string);
+//   // "skd://{ContentID}" -> "{ContentID}".
+//   const skd = string.replace(/^.*:\/\//, '');
+//   const uuid = skd.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+//   return uuid;
+// };
+
+// let enc = undefined;
+// var formatInitDataForFairPlay = function formatInitDataForFairPlay(initData) {
+//   if (!enc) {
+//     enc = new TextEncoder();
+//   }
+//   var uuid = extractUuid(initData);
+//   var string = `skd://${uuid}`;
+//   console.log('formatInitDataForFairPlay() string:', string);
+
+//   return enc.encode(string).buffer;
+// };
+
 const isFairplayKeySystem = (str) => str.startsWith('com.apple.fps');
 
 /**
@@ -100,6 +229,7 @@ export const makeNewRequest = (player, requestOptions) => {
     options,
     getLicense,
     removeSession,
+    addKeySession,
     eventBus,
     contentId
   } = requestOptions;
@@ -112,8 +242,12 @@ export const makeNewRequest = (player, requestOptions) => {
     keySession.close();
   });
 
+  addKeySession(initData, keySession);
+
   return new Promise((resolve, reject) => {
-    keySession.addEventListener('message', (event) => {
+
+    const messageHandler = (event) => {
+
       // all other types will be handled by keystatuseschange
       if (event.messageType !== 'license-request' && event.messageType !== 'license-renewal') {
         return;
@@ -126,9 +260,13 @@ export const makeNewRequest = (player, requestOptions) => {
         .catch((err) => {
           reject(err);
         });
-    }, false);
+    };
 
-    keySession.addEventListener('keystatuseschange', (event) => {
+    keySession.addEventListener('message', messageHandler, false);
+    keySession.messageHandler = messageHandler;
+
+    const keyStatusChangeHandler = (event) => {
+
       let expired = false;
 
       // based on https://www.w3.org/TR/encrypted-media/#example-using-all-events
@@ -173,9 +311,14 @@ export const makeNewRequest = (player, requestOptions) => {
           makeNewRequest(player, requestOptions);
         });
       }
-    }, false);
+    };
 
-    keySession.generateRequest(initDataType, initData).catch(() => {
+    keySession.addEventListener('keystatuseschange', keyStatusChangeHandler, false);
+    keySession.keyStatusChangeHandler = keyStatusChangeHandler;
+
+    const parsedInitData = getIsEdgeLegacy() ? parsePSSH(initData) : initData;
+
+    keySession.generateRequest(initDataType, parsedInitData).catch(() => {
       reject('Unable to create or initialize key session');
     });
   });
@@ -217,6 +360,7 @@ export const addSession = ({
   getLicense,
   contentId,
   removeSession,
+  addKeySession,
   eventBus
 }) => {
   const sessionData = {
@@ -225,6 +369,7 @@ export const addSession = ({
     options,
     getLicense,
     removeSession,
+    addKeySession,
     eventBus,
     contentId
   };
@@ -315,9 +460,34 @@ export const defaultGetLicense = (keySystemOptions) => (emeOptions, keyMessage, 
   }, httpResponseHandler(callback, true));
 };
 
-const promisifyGetLicense = (keySystem, getLicenseFn, eventBus) => {
+const promisifyGetLicense = (keySystem, getLicenseFn, eventBus, initData) => {
   return (emeOptions, keyMessage, contentId) => {
     return new Promise((resolve, reject) => {
+      let mpdXml;
+      let kId;
+
+      try {
+        mpdXml = eventBus.vhs ? eventBus.vhs.playlists.masterXml_ : '';
+        const reg = new RegExp(
+          /<AdaptationSet(.*?ContentProtection.*?)<\/AdaptationSet>/,
+          'gs'
+        );
+        const adaptationSetGroups = mpdXml.match(reg) || [];
+        const initDataString = window.btoa(String.fromCharCode(...new Uint8Array(initData))).slice(0, 731) || '';
+        // '731' is to slice `cenc:pssh` part of initData on PlayReady, Widevine pssh length won't exceed 731
+
+        kId = adaptationSetGroups.reduce((result, data, index, array) => {
+          if (data.includes(initDataString)) {
+            // break the iterator
+            array.splice(1);
+            return data && data.match(/default_KID="(.+)"/)[1];
+          }
+          return result;
+        }, null);
+      } catch (e) {
+        //
+      }
+
       const callback = function(err, license) {
         if (eventBus) {
           eventBus.trigger('licenserequestattempted');
@@ -333,7 +503,7 @@ const promisifyGetLicense = (keySystem, getLicenseFn, eventBus) => {
       if (isFairplayKeySystem(keySystem)) {
         getLicenseFn(emeOptions, contentId, new Uint8Array(keyMessage), callback);
       } else {
-        getLicenseFn(emeOptions, keyMessage, callback);
+        getLicenseFn(emeOptions, keyMessage, callback, kId);
       }
     });
   };
@@ -387,6 +557,7 @@ export const standard5July2016 = ({
   keySystemAccess,
   options,
   removeSession,
+  addKeySession,
   eventBus
 }) => {
   let keySystemPromise = Promise.resolve();
@@ -456,7 +627,7 @@ export const standard5July2016 = ({
   return keySystemPromise.then(() => {
     // if key system has not been determined then addSession doesn't need getLicense
     const getLicense = video.keySystem ?
-      promisifyGetLicense(keySystem, keySystemOptions.getLicense, eventBus) : null;
+      promisifyGetLicense(keySystem, keySystemOptions.getLicense, eventBus, initData) : null;
 
     return addSession({
       player,
@@ -467,6 +638,7 @@ export const standard5July2016 = ({
       getLicense,
       contentId,
       removeSession,
+      addKeySession,
       eventBus
     });
   });
