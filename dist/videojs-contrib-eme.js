@@ -580,7 +580,7 @@
       keySession.addEventListener('message', messageHandler, false);
       keySession.messageHandler = messageHandler;
 
-      const keyStatusChangeHandler = event => {
+      const keyStatusesChangeHandler = event => {
         let expired = false; // based on https://www.w3.org/TR/encrypted-media/#example-using-all-events
 
         keySession.keyStatuses.forEach((status, keyId) => {
@@ -625,8 +625,8 @@
         }
       };
 
-      keySession.addEventListener('keystatuseschange', keyStatusChangeHandler, false);
-      keySession.keyStatusChangeHandler = keyStatusChangeHandler;
+      keySession.addEventListener('keystatuseschange', keyStatusesChangeHandler, false);
+      keySession.keyStatusesChangeHandler = keyStatusesChangeHandler;
       const parsedInitData = getIsEdgeLegacy() ? parsePSSH(initData) : initData;
       keySession.generateRequest(initDataType, parsedInitData).catch(() => {
         reject('Unable to create or initialize key session');
