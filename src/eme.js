@@ -265,7 +265,7 @@ export const makeNewRequest = (player, requestOptions) => {
     keySession.addEventListener('message', messageHandler, false);
     keySession.messageHandler = messageHandler;
 
-    const keyStatusChangeHandler = (event) => {
+    const keyStatusesChangeHandler = (event) => {
 
       let expired = false;
 
@@ -313,8 +313,8 @@ export const makeNewRequest = (player, requestOptions) => {
       }
     };
 
-    keySession.addEventListener('keystatuseschange', keyStatusChangeHandler, false);
-    keySession.keyStatusChangeHandler = keyStatusChangeHandler;
+    keySession.addEventListener('keystatuseschange', keyStatusesChangeHandler, false);
+    keySession.keyStatusesChangeHandler = keyStatusesChangeHandler;
 
     const parsedInitData = getIsEdgeLegacy() ? parsePSSH(initData) : initData;
 
